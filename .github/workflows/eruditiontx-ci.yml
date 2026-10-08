@@ -1,0 +1,93 @@
+name: EruditionTX CI
+
+# GitHub-hosted runners on purpose: this repository is public, so a pull
+# request from a fork must never run on self-hosted runners.
+#
+# The workflows inherited from upstream only trigger on `master` and stay
+# dormant; this one covers `DEVELOPMENT` and tagged releases.
+
+on:
+  pull_request:
+    branches: [DEVELOPMENT]
+  push:
+    branches: [DEVELOPMENT]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      # Exits non-zero when any vulnerability is reachable from our code.
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  test:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Go version
+        run: go version
+      - name: Build
+        run: CGO_ENABLED=0 go build -tags kqueue -trimpath -o minio .
+      # Same flags as upstream `make test`, without its lint step.
+      - name: Unit tests
+        env:
+          MINIO_API_REQUESTS_MAX: "10000"
+          CGO_ENABLED: "0"
+        run: go test -tags kqueue,dev -timeout 150m ./...
+
+  release:
+    name: Release binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [vulncheck, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gen-ldflags reads the commit time and ID
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build linux binaries
+        run: |
+          mkdir dist
+          LDFLAGS="$(go run buildscripts/gen-ldflags.go)"
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -tags kqueue -trimpath \
+              --ldflags "$LDFLAGS" -o "dist/eruditiontx-objectstore-linux-$arch" .
+          done
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --verify-tag --title "$TAG" --generate-notes
