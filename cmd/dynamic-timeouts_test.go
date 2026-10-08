@@ -180,12 +180,14 @@ func testDynamicTimeoutAdjust(t *testing.T, timeout *dynamicTimeout, f func() fl
 func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 	timeout := newDynamicTimeout(time.Minute, time.Second)
 
-	rand.Seed(0)
+	// A local source: rand.Seed is a no-op since Go 1.24, so the global
+	// generator is no longer deterministic and the test failed ~1% of runs.
+	rng := rand.New(rand.NewSource(0))
 
 	initial := timeout.Timeout()
 
 	for range 10 {
-		testDynamicTimeoutAdjust(t, timeout, rand.ExpFloat64)
+		testDynamicTimeoutAdjust(t, timeout, rng.ExpFloat64)
 	}
 
 	adjusted := timeout.Timeout()
@@ -197,13 +199,14 @@ func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 func TestDynamicTimeoutAdjustNormalized(t *testing.T) {
 	timeout := newDynamicTimeout(time.Minute, time.Second)
 
-	rand.Seed(0)
+	// A local source: rand.Seed is a no-op since Go 1.24 (see above).
+	rng := rand.New(rand.NewSource(0))
 
 	initial := timeout.Timeout()
 
 	for range 10 {
 		testDynamicTimeoutAdjust(t, timeout, func() float64 {
-			return 1.0 + rand.NormFloat64()
+			return 1.0 + rng.NormFloat64()
 		})
 	}
 
