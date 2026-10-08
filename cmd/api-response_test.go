@@ -130,7 +130,9 @@ func TestGetURLScheme(t *testing.T) {
 func TestTrackingResponseWriter(t *testing.T) {
 	rw := httptest.NewRecorder()
 	trw := &trackingResponseWriter{ResponseWriter: rw}
-	trw.WriteHeader(123)
+	// 299 rather than a 1xx code: since Go 1.27 a body after a 1xx status is
+	// refused, and this test only checks that status and body pass through.
+	trw.WriteHeader(299)
 	if !trw.headerWritten {
 		t.Fatal("headerWritten was not set by WriteHeader call")
 	}
@@ -142,7 +144,7 @@ func TestTrackingResponseWriter(t *testing.T) {
 
 	// Check that WriteHeader and Write were called on the underlying response writer
 	resp := rw.Result()
-	if resp.StatusCode != 123 {
+	if resp.StatusCode != 299 {
 		t.Fatalf("unexpected status: %v", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
