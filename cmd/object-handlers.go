@@ -1896,7 +1896,7 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 		}
 	case authTypeStreamingUnsignedTrailer:
 		// Initialize stream chunked reader with optional trailers.
-		rd, s3Err = newUnsignedV4ChunkedReader(r, true, r.Header.Get(xhttp.Authorization) != "")
+		rd, s3Err = newUnsignedV4ChunkedReader(r, true, unsignedTrailerHasCredentials(r))
 		if s3Err != ErrNone {
 			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Err), r.URL)
 			return
@@ -2296,6 +2296,12 @@ func (api objectAPIHandlers) PutObjectExtractHandler(w http.ResponseWriter, r *h
 			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Err), r.URL)
 			return
 		}
+	case authTypeStreamingUnsignedTrailer:
+		// Snowball auto-extract has never decoded unsigned-trailer bodies, and
+		// without this case the request skipped signature verification
+		// entirely (CVE-2026-40344). Reject it.
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrSignatureVersionNotSupported), r.URL)
+		return
 	case authTypeSignedV2, authTypePresignedV2:
 		s3Err = isReqAuthenticatedV2(r)
 		if s3Err != ErrNone {
