@@ -3,7 +3,7 @@ name: EruditionTX CI
 # GitHub-hosted runners on purpose: this repository is public, so a pull
 # request from a fork must never run on self-hosted runners.
 #
-# The workflows inherited from upstream only trigger on `master` and stay
+# Most workflows inherited from upstream only trigger on `master` and stay
 # dormant; this one covers `DEVELOPMENT` and tagged releases.
 
 on:
