@@ -24,7 +24,20 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	xhttp "github.com/minio/minio/internal/http"
 )
+
+// unsignedTrailerHasCredentials reports whether an unsigned-trailer request names
+// an access key. getReqAccessKeyV4 (used by isPutActionAllowed) accepts one from
+// the Authorization header or the X-Amz-Credential query parameter, so the
+// signature must be verified whenever either is present; only a request with no
+// credentials at all is anonymous. Checking the header alone let a request with
+// query-string credentials act as that key without a signature (CVE-2026-41145).
+func unsignedTrailerHasCredentials(r *http.Request) bool {
+	return r.Header.Get(xhttp.Authorization) != "" ||
+		r.Form.Has(xhttp.AmzCredential) || r.URL.Query().Has(xhttp.AmzCredential)
+}
 
 // newUnsignedV4ChunkedReader returns a new s3UnsignedChunkedReader that translates the data read from r
 // out of HTTP "chunked" format before returning it.
